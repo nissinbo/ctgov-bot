@@ -1,0 +1,64 @@
+.data-frame {
+  font-size: 0.875em;
+}
+
+/* SQLクエリのコードブロックのスタイル調整 */
+pre code {
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  max-width: 100% !important;
+}
+
+/* 一般的なコードブロックの調整 */
+pre {
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+}
+
+/* 長いSQL文の可読性向上 */
+.sql-query {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  line-height: 1.4;
+  white-space: pre-wrap !important;
+  word-break: break-word;
+}
+
+/* Collapsible SQL block */
+details.sql-block {
+  margin: 6px 0 10px;
+}
+details.sql-block > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  display: inline-block;
+  padding: 6px 10px;
+  background: #f1f3f5;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-weight: 500;
+}
+details.sql-block > summary::-webkit-details-marker {
+  display: none;
+}
+details.sql-block > summary::before {
+  content: '▶ ';
+  display: inline-block;
+  transform: translateY(-1px);
+}
+details.sql-block[open] > summary::before {
+  content: '▼ ';
+}
+
+/* Toggle hint text */
+details.sql-block .hint-open { display: none; }
+details.sql-block[open] .hint-open { display: inline; }
+details.sql-block[open] .hint-closed { display: none; }
