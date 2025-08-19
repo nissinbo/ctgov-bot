@@ -296,16 +296,13 @@ query_aact_database <- function(sql_query, description = "Database query") {
     })
     
     # Show SQL query to user immediately
-      # Show SQL query to user in a collapsible block (collapsed by default)
-      out$md(paste0(
-        "### 📊 ", description, "\n\n",
-    "<details class=\"sql-block\">\n",
-    "<summary class=\"sql-summary\"><strong>Show SQL</strong> <span class=\"hint-closed\">(click to expand)</span><span class=\"hint-open\">(click to collapse)</span></summary>\n\n",
-        "```sql\n",
-        sql_query,
-        "\n```\n",
-        "</details>\n"
-      ), TRUE, TRUE)
+    out$md(paste0(
+      "### 📊 ", description, "\n\n",
+      "**SQL to be executed:**\n"
+    ), TRUE, FALSE)
+    
+    # Show SQL in a code block
+  out$code(sql_query, TRUE, TRUE)
     
     # Show loading message
   out$md("Running query...\n", TRUE, FALSE)
@@ -334,17 +331,17 @@ query_aact_database <- function(sql_query, description = "Database query") {
           try({ total <- count_aact_query_rows(sql_query) }, silent = TRUE)
         }
 
-        # Build message that avoids implying ordering (no 'first')
+        # Build message that never implies full retrieval
         if (!is.na(total)) {
-          msg <- paste0("**Result:** Showing ", nrow(result), " of ", total, " matching records.\n")
+          msg <- paste0("**Result:** Showing the first ", nrow(result), " of ", total, " matching records.\n")
         } else {
-          msg <- paste0("**Result:** Showing ", nrow(result), " matching records.\n")
+          msg <- paste0("**Result:** Showing the first ", nrow(result), " matching records.\n")
         }
         # If SQL had LIMIT, explicitly mention that the preview shows the first N rows
         if (!is.null(limit_in_sql)) {
           msg <- paste0(
             msg,
-            sprintf("\nNote: Due to SQL LIMIT %d, showing up to %d rows.\n", limit_in_sql, limit_in_sql)
+            sprintf("\nNote: Due to SQL LIMIT %d, showing the first %d rows.\n", limit_in_sql, limit_in_sql)
           )
         }
         # Do not mention app-level safety cap here
@@ -357,7 +354,7 @@ query_aact_database <- function(sql_query, description = "Database query") {
       return("Query executed successfully. No data found matching the criteria.")
     } else {
       # Provide a concise textual summary without exposing internal variables
-  lim_txt <- if (!is.null(limit_in_sql)) paste0(" Note: Showing up to ", limit_in_sql, " rows due to SQL LIMIT.") else ""
+      lim_txt <- if (!is.null(limit_in_sql)) paste0(" Note: Showing the first ", limit_in_sql, " rows due to SQL LIMIT.") else ""
       # Build concise model-facing summary without implying full retrieval
       total_suffix <- ""
       total <- NA_integer_
@@ -367,9 +364,9 @@ query_aact_database <- function(sql_query, description = "Database query") {
         try({ total <- count_aact_query_rows(sql_query) }, silent = TRUE)
       }
       if (!is.na(total)) {
-        return(paste0("Query executed successfully.", lim_txt, " Showing ", nrow(result), " of ", total, " matching records."))
+        return(paste0("Query executed successfully.", lim_txt, " Showing the first ", nrow(result), " of ", total, " matching records."))
       } else {
-        return(paste0("Query executed successfully.", lim_txt, " Showing ", nrow(result), " matching records."))
+        return(paste0("Query executed successfully.", lim_txt, " Showing the first ", nrow(result), " matching records."))
       }
     }
     

@@ -16,7 +16,9 @@ library(here)
 library(tools)
 library(utils)
 
-# Database libraries
+# Database libraries (install if needed)
+if (!require(DBI, quietly = TRUE)) install.packages("DBI")
+if (!require(RPostgres, quietly = TRUE)) install.packages("RPostgres")
 library(DBI)
 library(RPostgres)
 

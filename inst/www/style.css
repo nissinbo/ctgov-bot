@@ -30,35 +30,3 @@ pre {
   white-space: pre-wrap !important;
   word-break: break-word;
 }
-
-/* Collapsible SQL block */
-details.sql-block {
-  margin: 6px 0 10px;
-}
-details.sql-block > summary {
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-  display: inline-block;
-  padding: 6px 10px;
-  background: #f1f3f5;
-  border: 1px solid #dee2e6;
-  border-radius: 6px;
-  font-weight: 500;
-}
-details.sql-block > summary::-webkit-details-marker {
-  display: none;
-}
-details.sql-block > summary::before {
-  content: '▶ ';
-  display: inline-block;
-  transform: translateY(-1px);
-}
-details.sql-block[open] > summary::before {
-  content: '▼ ';
-}
-
-/* Toggle hint text */
-details.sql-block .hint-open { display: none; }
-details.sql-block[open] .hint-open { display: inline; }
-details.sql-block[open] .hint-closed { display: none; }

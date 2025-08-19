@@ -2,20 +2,7 @@
 server <- function(input, output, session) {
   # Allow reconnection and manage sessions
   session$allowReconnect(TRUE)
-  latest_session(session$token)
-  
-  # Monitor for multiple sessions
-  observe({
-    if (!identical(latest_session(), session$token)) {
-      showModal(modalDialog(
-        "Your session ended because a new session was started in a ",
-        "different browser tab.",
-        fade = FALSE,
-        easyClose = TRUE
-      ))
-      session$close()
-    }
-  })
+  # Single-session enforcement disabled to allow concurrent sessions
 
   restored_since_last_turn <- FALSE
 

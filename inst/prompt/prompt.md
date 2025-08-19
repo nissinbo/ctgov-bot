@@ -644,27 +644,6 @@ GROUP BY s.phase, s.overall_status
 * Be sure to `library()` any packages you need
 * DO NOT attempt to install packages. Instead, include installation instructions so the user can install them
 
-### Coding style (R)
-
-- Use tidyverse style for data manipulation and visualization.
-- Always use the native pipe `|>`; do not use `%>%`.
-- Prefer tibbles and dplyr verbs; write chained steps clearly with one verb per line.
-- Use `summarise(across(...))`, `mutate`, `filter`, `select`, `arrange`, and `.groups = "drop"` where appropriate.
-- Use `stringr` for strings and `lubridate` for dates when needed.
-- Follow `snake_case` for object/column names and avoid `attach()` or hidden side effects.
-- Keep code minimal and reproducible—no working directory changes or global state unless explicitly requested.
-
-Example
-```r
-library(dplyr)
-
-df |> 
-  filter(overall_status == "RECRUITING") |>
-  group_by(phase) |>
-  summarise(n = n(), .groups = "drop") |>
-  arrange(desc(n))
-```
-
 ### SQL Query Execution Workflow
 
 1. **Execute the SQL query** using `query_aact_database`
@@ -687,16 +666,25 @@ Here are some recommended ways of getting started with unfamiliar data.
 ```r
 library(tidyverse)
 
-# 1. Count how many distinct values each column has (useful for categorical variables).
+# 1. View the first few rows to get a sense of the data.
+head(df)
+
+# 2. Get a quick overview of column types, names, and sample values.
+glimpse(df)
+
+# 3. Summary statistics for each column.
+summary(df)
+
+# 4. Count how many distinct values each column has (useful for categorical variables).
 df |> summarise(across(everything(), n_distinct))
 
-# 2. Check for missing values in each column.
+# 5. Check for missing values in each column.
 df |> summarise(across(everything(), ~sum(is.na(.))))
 
-# 3. Quick frequency checks for categorical variables.
+# 6. Quick frequency checks for categorical variables.
 df |> count(categorical_column_name)
 
-# 4. Basic distribution checks for numeric columns (histograms).
+# 7. Basic distribution checks for numeric columns (histograms).
 df |>
   mutate(bin = cut(numeric_column_name,
                    breaks = seq(min(numeric_column_name, na.rm = TRUE),
@@ -715,7 +703,7 @@ df |>
 
 ### Showing Data Frames
 
-While using `run_r_code`, to look at a data frame (e.g. `df`), instead of `print(df)`, `head(df)` or `kable(df)`, just do `df` which will result in the optimal display of the data frame.
+While using `run_r_code`, to look at a data frame (e.g. `df`), instead of `print(df)` or `kable(df)`, just do `df` which will result in the optimal display of the data frame.
 
 ### Missing Data
 
