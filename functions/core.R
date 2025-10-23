@@ -185,18 +185,12 @@ run_r_code <- function(code) {
   }
 
   out_df <- function(df) {
-  ROWS_START <- 5
-  ROWS_END <- 0
-
-    # For the model
-    df_json <- encode_df_for_model(
-      df,
-      max_rows = ROWS_START,
-      show_end = ROWS_END
-    )
+    ROWS_START <- 5
+    ROWS_END <- 0
+    
+    df_json <- encode_df_for_model(df, max_rows = ROWS_START, show_end = ROWS_END)
     result <<- c(result, list(list(type = "text", text = df_json)))
-    # For human
-    # Make sure human sees same EXACT rows as model, this includes omitting the same rows
+    
     split <- split_df(nrow(df), show_start = ROWS_START, show_end = ROWS_END)
     attrs <- "class=\"data-frame table table-sm table-striped\""
     md_tbl <- paste0(
@@ -232,10 +226,8 @@ run_r_code <- function(code) {
   }
 
   out$code(code)
-  # End the source code block so the outputs all appear in a separate block
   out$close()
-
-  # Use the new evaluate_r_code function
+  
   if (in_shiny()) {
     shiny::withLogErrors({
       evaluate_r_code(
@@ -267,128 +259,90 @@ query_aact_database <- function(sql_query, description = "Database query") {
     return("❌ AACT database is not connected. Please check the connection.")
   }
   
-  # Clean up SQL query - remove trailing semicolons and extra whitespace
   sql_query <- trimws(sql_query)
   sql_query <- gsub(";\\s*$", "", sql_query)
-
-  # Detect LIMIT clause in the original SQL (case-insensitive)
-  # Capture the numeric value after LIMIT if present (e.g., LIMIT 50 or LIMIT\n 50)
+  
   limit_in_sql <- NULL
   m <- regexpr("(?i)\\bLIMIT\\s+(\\d+)", sql_query, perl = TRUE)
   if (m > 0) {
-    limit_in_sql <- as.integer(regmatches(sql_query, m, invert = FALSE))
-    # Extract just the number group
-    # regmatches returns the full match; extract the digits using sub
-    limit_in_sql <- as.integer(sub("(?i).*\\bLIMIT\\s+(\\d+).*", "\\1", regmatches(sql_query, m, invert = FALSE), perl = TRUE))
+    limit_in_sql <- as.integer(sub("(?i).*\\bLIMIT\\s+(\\d+).*", "\\1", 
+                                    regmatches(sql_query, m, invert = FALSE), perl = TRUE))
   }
-  # No implicit safety cap enforced at execution time
   
-  # Create output streamer for user feedback if in Shiny
+
   if (in_shiny()) {
     out <- MarkdownStreamer$new(function(md_text) {
       save_output_chunk(md_text)
-      chat_append_message(
-        "chat",
-        list(role = "assistant", content = md_text),
-        chunk = TRUE,
-        operation = "append"
-      )
+      chat_append_message("chat", list(role = "assistant", content = md_text), 
+                         chunk = TRUE, operation = "append")
     })
     
-    # Show SQL query to user immediately
-    out$md(paste0(
-      "### 📊 ", description, "\n\n",
-      "**SQL to be executed:**\n"
-    ), TRUE, FALSE)
-    
-    # Show SQL in a code block
-  out$code(sql_query, TRUE, TRUE)
-    
-    # Show loading message
-  out$md("Running query...\n", TRUE, FALSE)
-    
+    out$md(paste0("### 📊 ", description, "\n\n", "**SQL to be executed:**\n"), TRUE, FALSE)
+    out$code(sql_query, TRUE, TRUE)
+    out$md("Running query...\n", TRUE, FALSE)
     on.exit(out$close(), add = TRUE, after = FALSE)
   }
   
-  # Execute the query
   tryCatch({
-  result <- execute_aact_query(sql_query)
-    
-    # Store result for R analysis
+    result <- execute_aact_query(sql_query)
     assign("aact_query_result", result, envir = globalenv())
     
-    # Show results to user if in Shiny
     if (in_shiny()) {
       if (nrow(result) == 0) {
         out$md("**Result:** No data matched your criteria.\n", TRUE, TRUE)
       } else {
-        # Determine if we likely hit a cap or LIMIT and get the total count when appropriate
         total <- NA_integer_
-  need_total <- FALSE
-  if (!is.null(limit_in_sql) && nrow(result) >= limit_in_sql) need_total <- TRUE
+        need_total <- !is.null(limit_in_sql) && nrow(result) >= limit_in_sql
         if (need_total) {
-          # Best-effort total count; ignore errors
           try({ total <- count_aact_query_rows(sql_query) }, silent = TRUE)
         }
-
-        # Build message that never implies full retrieval
-        if (!is.na(total)) {
-          msg <- paste0("**Result:** Showing the first ", nrow(result), " of ", total, " matching records.\n")
+        
+        msg <- if (!is.na(total)) {
+          paste0("**Result:** Showing the first ", nrow(result), " of ", total, " matching records.\n")
         } else {
-          msg <- paste0("**Result:** Showing the first ", nrow(result), " matching records.\n")
+          paste0("**Result:** Showing the first ", nrow(result), " matching records.\n")
         }
-        # If SQL had LIMIT, explicitly mention that the preview shows the first N rows
+        
         if (!is.null(limit_in_sql)) {
-          msg <- paste0(
-            msg,
-            sprintf("\nNote: Due to SQL LIMIT %d, showing the first %d rows.\n", limit_in_sql, limit_in_sql)
-          )
+          msg <- paste0(msg, sprintf("\nNote: Due to SQL LIMIT %d, showing the first %d rows.\n", 
+                                     limit_in_sql, limit_in_sql))
         }
-        # Do not mention app-level safety cap here
         out$md(msg, TRUE, TRUE)
       }
     }
     
-    # Return simplified response for LLM
     if (nrow(result) == 0) {
       return("Query executed successfully. No data found matching the criteria.")
-    } else {
-      # Provide a concise textual summary without exposing internal variables
-      lim_txt <- if (!is.null(limit_in_sql)) paste0(" Note: Showing the first ", limit_in_sql, " rows due to SQL LIMIT.") else ""
-      # Build concise model-facing summary without implying full retrieval
-      total_suffix <- ""
-      total <- NA_integer_
-  need_total <- FALSE
-  if (!is.null(limit_in_sql) && nrow(result) >= limit_in_sql) need_total <- TRUE
-      if (need_total) {
-        try({ total <- count_aact_query_rows(sql_query) }, silent = TRUE)
-      }
-      if (!is.na(total)) {
-        return(paste0("Query executed successfully.", lim_txt, " Showing the first ", nrow(result), " of ", total, " matching records."))
-      } else {
-        return(paste0("Query executed successfully.", lim_txt, " Showing the first ", nrow(result), " matching records."))
-      }
     }
     
+    lim_txt <- if (!is.null(limit_in_sql)) {
+      paste0(" Note: Showing the first ", limit_in_sql, " rows due to SQL LIMIT.")
+    } else ""
+    
+    total <- NA_integer_
+    need_total <- !is.null(limit_in_sql) && nrow(result) >= limit_in_sql
+    if (need_total) {
+      try({ total <- count_aact_query_rows(sql_query) }, silent = TRUE)
+    }
+    
+    if (!is.na(total)) {
+      return(paste0("Query executed successfully.", lim_txt, " Showing the first ", 
+                   nrow(result), " of ", total, " matching records."))
+    } else {
+      return(paste0("Query executed successfully.", lim_txt, " Showing the first ", 
+                   nrow(result), " matching records."))
+    }
   }, error = function(e) {
     error_msg <- paste0("❌ Failed to execute SQL query: ", e$message)
-    
-    if (in_shiny()) {
-      out$md(error_msg, TRUE, TRUE)
-    }
-    
+    if (in_shiny()) out$md(error_msg, TRUE, TRUE)
     return(error_msg)
   })
 }
-
-# Utility Functions
 
 in_shiny <- function() {
   !is.null(shiny::getDefaultReactiveDomain())
 }
 
-# Combine consecutive text outputs into one, for better readability (for both us
-# and the model).
 coalesce_text_outputs <- function(content_list) {
   txt_buffer <- character(0)
   result_content_list <- list()

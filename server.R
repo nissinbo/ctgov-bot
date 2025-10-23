@@ -1,61 +1,32 @@
 # Server logic
 server <- function(input, output, session) {
-  # Allow reconnection and manage sessions
-  session$allowReconnect(TRUE)
-  # Single-session enforcement disabled to allow concurrent sessions
-
-  restored_since_last_turn <- FALSE
-
-  # Restore previous chat session, if applicable
-  if (globals$ui_messages$size() > 0) {
-    ui_msgs <- globals$ui_messages$as_list()
-    if (identical(ui_msgs[[1]], list(role = "user", content = "Hello"))) {
-      ui_msgs <- ui_msgs[-1]
-    }
-    for (msg in ui_msgs) {
-      chat_append_message("chat", msg, chunk = FALSE)
-    }
-    restored_since_last_turn <- TRUE
-  }
-
-  chat <- chat_bot(default_turns = globals$turns)
+  # Initialize session-specific storage
+  session$userData$storage <- list(
+    pending_output = fastmap::fastqueue(),
+    last_chat = NULL
+  )
   
-  # Initialize AACT database connection
+  # Create new chat bot for this session
+  chat <- chat_bot(default_turns = list())
   init_aact_connection()
   
   start_chat_request <- function(user_input) {
-    # For local debugging
-    if (interactive()) {
-      globals$last_chat <- chat
-    }
-
-    prefix <- if (restored_since_last_turn) {
-      paste0(
-        "(Continuing previous chat session. The R environment may have ",
-        "changed since the last request/response.)\n\n"
-      )
-    } else {
-      ""
-    }
-    restored_since_last_turn <<- FALSE
-
-    stream <- save_stream_output()(
-      chat$stream_async(paste0(prefix, user_input))
-    )
+    if (interactive()) session$userData$storage$last_chat <- chat
+    
+    stream <- coro::async_generator(function(stream) {
+      for (chunk in coro::await_each(stream)) {
+        if (session$isClosed()) {
+          req(FALSE)
+        }
+        save_output_chunk(chunk)
+        coro::yield(chunk)
+      }
+    })(chat$stream_async(user_input))
     chat_append("chat", stream) |>
       promises::then(
         ~ {
-          if (session$isClosed()) {
-            req(FALSE)
-          }
-
-          # After each successful turn, save everything in case we need to
-          # restore (i.e. user stops the app and restarts it)
-          globals$turns <- chat$get_turns()
-          save_messages(
-            list(role = "user", content = user_input),
-            list(role = "assistant", content = take_pending_output())
-          )
+          if (session$isClosed()) req(FALSE)
+          take_pending_output()
         }
       ) |>
       promises::finally(
@@ -81,8 +52,6 @@ server <- function(input, output, session) {
     start_chat_request(input$chat_user_input)
   })
 
-  # Kick start the chat session (unless we've restored a previous session)
-  if (length(chat$get_turns()) == 0) {
-    start_chat_request("Hello")
-  }
+  # Kick start the chat session with greeting
+  start_chat_request("Hello")
 }

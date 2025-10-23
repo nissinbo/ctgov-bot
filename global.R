@@ -15,10 +15,6 @@ library(withr)
 library(here)
 library(tools)
 library(utils)
-
-# Database libraries (install if needed)
-if (!require(DBI, quietly = TRUE)) install.packages("DBI")
-if (!require(RPostgres, quietly = TRUE)) install.packages("RPostgres")
 library(DBI)
 library(RPostgres)
 
@@ -39,58 +35,36 @@ html_deps <- function() {
   )
 }
 
-# Global state management
+# Global database connection (shared across sessions)
 globals <- new.env(parent = emptyenv())
-globals$turns <- NULL
-globals$ui_messages <- fastmap::fastqueue()
-globals$pending_output <- fastmap::fastqueue()
-globals$last_chat <- NULL
 globals$aact_connection <- NULL
 globals$aact_connected <- FALSE
 
-# Reactive value for session management
-latest_session <- reactiveVal()
-
-# Helper functions
-reset_state <- function() {
-  globals$turns <- NULL
-  globals$ui_messages$reset()
-  globals$pending_output$reset()
-  invisible()
-}
-
-save_messages <- function(...) {
-  for (msg in list(...)) {
-    globals$ui_messages$add(msg)
+# Session-specific storage (accessed via getDefaultReactiveDomain)
+get_session_storage <- function() {
+  session <- shiny::getDefaultReactiveDomain()
+  if (is.null(session)) {
+    stop("No active Shiny session found")
   }
-  invisible()
+  if (is.null(session$userData$storage)) {
+    session$userData$storage <- list(
+      pending_output = fastmap::fastqueue(),
+      last_chat = NULL
+    )
+  }
+  session$userData$storage
 }
 
+# Helper functions that work across sessions
 save_output_chunk <- function(chunk) {
-  globals$pending_output$add(chunk)
+  storage <- get_session_storage()
+  storage$pending_output$add(chunk)
   invisible()
 }
 
 take_pending_output <- function() {
-  chunks <- unlist(globals$pending_output$as_list())
-  globals$pending_output$reset()
+  storage <- get_session_storage()
+  chunks <- unlist(storage$pending_output$as_list())
+  storage$pending_output$reset()
   paste(collapse = "", chunks)
-}
-
-# Stream decorator that saves each chunk to pending_output
-save_stream_output <- function() {
-  coro::async_generator(function(stream) {
-    session <- getDefaultReactiveDomain()
-    for (chunk in coro::await_each(stream)) {
-      if (session$isClosed()) {
-        req(FALSE)
-      }
-      save_output_chunk(chunk)
-      coro::yield(chunk)
-    }
-  })
-}
-
-last_chat <- function() {
-  globals$last_chat
 }
