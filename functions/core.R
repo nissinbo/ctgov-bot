@@ -145,6 +145,7 @@ create_quarto_report <- function(filename, content) {
 # @returns The results of the evaluation
 # @noRd
 run_r_code <- function(code) {
+  assert_code_is_safe(code)
   # Try hard to suppress ANSI terminal formatting characters
   withr::local_envvar(NO_COLOR = 1)
   withr::local_options(rlib_interactive = FALSE, rlang_interactive = FALSE)
@@ -253,10 +254,45 @@ run_r_code <- function(code) {
   I(result)
 }
 
+assert_code_is_safe <- function(code) {
+  restricted_patterns <- c(
+    "\\bread\\.(csv|rds|rdata|table)\\s*\\(",
+    "\\bload\\s*\\(",
+    "\\bsave(R?DS)?\\s*\\(",
+    "\\breadLines\\s*\\(",
+    "\\bscan\\s*\\(",
+    "\\bfile\\.(create|remove|rename|copy)\\s*\\(",
+    "\\bdir\\.(create|remove)\\s*\\(",
+    "\\bunlink\\s*\\(",
+    "\\bsystem2?\\s*\\(",
+    "\\bshell\\s*\\(",
+    "\\bdownload\\.file\\s*\\(",
+    "\\bsetwd\\s*\\(",
+    "\\bsource\\s*\\("
+  )
+  triggered <- restricted_patterns[
+    vapply(restricted_patterns, function(pattern) {
+      grepl(pattern, code, ignore.case = TRUE, perl = TRUE)
+    }, logical(1))
+  ]
+  if (length(triggered) > 0) {
+    stop(sprintf(
+      "Execution blocked. The submitted code references restricted functions (patterns: %s). Please revise the request to avoid local file or system access.",
+      paste(unique(triggered), collapse = ", ")
+    ))
+  }
+  invisible(TRUE)
+}
+
 # AACT Database Query Tool
 query_aact_database <- function(sql_query, description = "Database query") {
-  if (!globals$aact_connected) {
-    return("❌ AACT database is not connected. Please check the connection.")
+  if (!aact_connection_valid()) {
+    last_error <- get_aact_last_error()
+    msg <- "❌ AACT database is not connected. Please check the connection."
+    if (!is.null(last_error) && nzchar(last_error)) {
+      msg <- paste0(msg, " Last error: ", last_error, ".")
+    }
+    return(msg)
   }
   
   sql_query <- trimws(sql_query)
@@ -308,6 +344,7 @@ query_aact_database <- function(sql_query, description = "Database query") {
                                      limit_in_sql, limit_in_sql))
         }
         out$md(msg, TRUE, TRUE)
+        render_query_table(result, out)
       }
     }
     
@@ -337,6 +374,18 @@ query_aact_database <- function(sql_query, description = "Database query") {
     if (in_shiny()) out$md(error_msg, TRUE, TRUE)
     return(error_msg)
   })
+}
+
+render_query_table <- function(df, streamer, max_rows = 20) {
+  if (missing(streamer) || is.null(streamer)) return(invisible(NULL))
+  rows_to_show <- min(nrow(df), max_rows)
+  attrs <- "class=\"data-frame table table-sm table-striped\""
+  table_html <- knitr::kable(head(df, rows_to_show), format = "html", table.attr = attrs)
+  streamer$md(table_html, TRUE, TRUE)
+  if (nrow(df) > rows_to_show) {
+    streamer$md(sprintf("... %d additional rows omitted ...\n", nrow(df) - rows_to_show), TRUE, TRUE)
+  }
+  invisible(NULL)
 }
 
 in_shiny <- function() {

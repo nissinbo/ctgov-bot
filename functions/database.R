@@ -19,54 +19,48 @@ load_env <- function() {
 
 init_aact_connection <- function() {
   load_env()
-  
-  required_packages <- c("DBI", "RPostgres")
-  missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
-  
-  if (length(missing_packages) > 0) {
-    message("Installing required database packages: ", paste(missing_packages, collapse = ", "))
-    install.packages(missing_packages, quiet = TRUE)
+  ensure_db_dependencies()
+
+  if (aact_connection_valid()) {
+    globals$aact_connected <- TRUE
+    return(TRUE)
   }
-  
-  library(DBI)
-  library(RPostgres)
-  
+
+  close_aact_connection()
+  credentials <- get_aact_credentials()
+
   tryCatch({
     con <- DBI::dbConnect(
       RPostgres::Postgres(),
-      host = Sys.getenv("AACT_HOST", "aact-db.ctti-clinicaltrials.org"),
-      port = as.integer(Sys.getenv("AACT_PORT", "5432")),
-      dbname = Sys.getenv("AACT_DATABASE", "aact"),
-      user = Sys.getenv("AACT_USERNAME"),
-      password = Sys.getenv("AACT_PASSWORD")
+      host = credentials$host,
+      port = credentials$port,
+      dbname = credentials$dbname,
+      user = credentials$user,
+      password = credentials$password
     )
-    
-    test_result <- DBI::dbGetQuery(con, "SELECT 1 as test_connection")
-    
-    if (nrow(test_result) == 1) {
-      globals$aact_connection <- con
-      globals$aact_connected <- TRUE
-      
-      cat("\n🟢 AACT Database Connected Successfully!\n")
-      cat("✅ Connection to AACT database established\n")
-      cat("📊 Ready to execute clinical trial queries\n\n")
-      
-      return(TRUE)
-    } else {
-      stop("Connection test failed")
-    }
+
+    DBI::dbGetQuery(con, "SELECT 1 as test_connection")
+
+    globals$aact_connection <- con
+    globals$aact_connected <- TRUE
+    globals$aact_last_error <- NULL
+    cat("\n🟢 AACT Database Connected Successfully!\n")
+    cat("✅ Connection to AACT database established\n")
+    cat("📊 Ready to execute clinical trial queries\n\n")
+    TRUE
   }, error = function(e) {
     globals$aact_connected <- FALSE
-    warning("Failed to connect to AACT database: ", e$message)
+    record_aact_error(conditionMessage(e))
+    message("Failed to connect to AACT database: ", conditionMessage(e))
     cat("\n🔴 AACT Database Connection Failed\n")
     cat("❌ Could not establish connection\n")
     cat("💡 Please check your credentials and network connection\n\n")
-    return(FALSE)
+    FALSE
   })
 }
 
 execute_aact_query <- function(sql_query, max_rows = NULL) {
-  if (!globals$aact_connected || is.null(globals$aact_connection)) {
+  if (!aact_connection_valid()) {
     stop("AACT database is not connected. Please check connection.")
   }
   
@@ -89,7 +83,7 @@ execute_aact_query <- function(sql_query, max_rows = NULL) {
 }
 
 count_aact_query_rows <- function(sql_query) {
-  if (!globals$aact_connected || is.null(globals$aact_connection)) {
+  if (!aact_connection_valid()) {
     stop("AACT database is not connected. Please check connection.")
   }
   
@@ -114,10 +108,85 @@ get_aact_status <- function() {
 }
 
 close_aact_connection <- function() {
-  if (exists("aact_connection", envir = globals) && !is.null(globals$aact_connection)) {
-    DBI::dbDisconnect(globals$aact_connection)
+  if (!aact_connection_valid()) {
     globals$aact_connection <- NULL
     globals$aact_connected <- FALSE
-    cat("🔌 AACT database connection closed\n")
+    globals$aact_last_error <- NULL
+    return(invisible(FALSE))
   }
+  try(DBI::dbDisconnect(globals$aact_connection), silent = TRUE)
+  globals$aact_connection <- NULL
+  globals$aact_connected <- FALSE
+  globals$aact_last_error <- NULL
+  cat("🔌 AACT database connection closed\n")
+  invisible(TRUE)
+}
+
+aact_connection_valid <- function() {
+  if (is.null(globals$aact_connection)) {
+    return(FALSE)
+  }
+  tryCatch({
+    DBI::dbIsValid(globals$aact_connection)
+  }, error = function(...) FALSE)
+}
+
+ensure_db_dependencies <- function() {
+  required_packages <- c("DBI", "RPostgres")
+  missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
+  if (length(missing_packages) > 0) {
+    stop(
+      "Required database packages are missing: ",
+      paste(missing_packages, collapse = ", "),
+      ". Install them before starting the app."
+    )
+  }
+  invisible(TRUE)
+}
+
+get_aact_credentials <- function() {
+  creds <- list(
+    host = Sys.getenv("AACT_HOST", "aact-db.ctti-clinicaltrials.org"),
+    port = as.integer(Sys.getenv("AACT_PORT", "5432")),
+    dbname = Sys.getenv("AACT_DATABASE", "aact"),
+    user = Sys.getenv("AACT_USERNAME"),
+    password = Sys.getenv("AACT_PASSWORD")
+  )
+
+  missing_fields <- names(Filter(function(x) is.null(x) || !nzchar(x), creds[c("user", "password")]))
+  if (length(missing_fields) > 0) {
+    stop(
+      "Missing required AACT credentials: ",
+      paste(missing_fields, collapse = ", "),
+      ". Please set them in the environment or .env file."
+    )
+  }
+
+  creds
+}
+
+register_aact_session <- function(session) {
+  if (is.null(session)) return(invisible(FALSE))
+  globals$aact_session_count <- globals$aact_session_count + 1L
+  session$onSessionEnded(function() {
+    unregister_aact_session()
+  })
+  invisible(TRUE)
+}
+
+unregister_aact_session <- function() {
+  globals$aact_session_count <- max(0L, globals$aact_session_count - 1L)
+  if (globals$aact_session_count == 0L) {
+    close_aact_connection()
+  }
+  invisible(TRUE)
+}
+
+record_aact_error <- function(message) {
+  globals$aact_last_error <- message
+  invisible(TRUE)
+}
+
+get_aact_last_error <- function() {
+  globals$aact_last_error
 }

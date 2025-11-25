@@ -39,6 +39,8 @@ html_deps <- function() {
 globals <- new.env(parent = emptyenv())
 globals$aact_connection <- NULL
 globals$aact_connected <- FALSE
+globals$aact_session_count <- 0L
+globals$aact_last_error <- NULL
 
 # Session-specific storage (accessed via getDefaultReactiveDomain)
 get_session_storage <- function() {
